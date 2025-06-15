@@ -1,1 +1,297 @@
-<div>hello</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TON Wallet & Bot Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        button { background: #0088cc; color: white; border: none; padding: 10px 15px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+        #wallet-info, #bot-info, #bot-connection { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 5px; }
+        .hidden { display: none; }
+        .section { margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
+        .qr-code { margin: 15px 0; text-align: center; }
+        .status { padding: 8px; border-radius: 4px; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="section">
+        <h1>TON Wallet Connection</h1>
+        
+        <button id="connectBtn">Connect Wallet</button>
+        <button id="sendBtn" disabled>Send 0.01 TON</button>
+        
+        <div id="wallet-info" class="hidden">
+            <h3>Connected Wallet</h3>
+            <p><strong>Address:</strong> <span id="walletAddress"></span></p>
+            <p><strong>Network:</strong> <span id="walletNetwork"></span></p>
+            <p><strong>Status:</strong> <span id="connectionStatus" class="status disconnected">Disconnected</span></p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h1>Telegram Bot Integration</h1>
+        <div id="bot-info">
+            <h3>Bot Connection</h3>
+            <div id="bot-connection">
+                <p>Connect your wallet to the bot:</p>
+                <button id="connectToBotBtn">Connect to Bot</button>
+                <div id="botConnectionStatus" class="hidden">
+                    <p><strong>Bot User ID:</strong> <span id="botUserId"></span></p>
+                    <p><strong>Bot Status:</strong> <span id="botStatus" class="status disconnected">Not connected</span></p>
+                </div>
+            </div>
+            
+            <h3 style="margin-top: 20px;">Bot Commands</h3>
+            <p><strong>/start</strong> - Show bot menu</p>
+            <p><strong>/connect</strong> - Connect wallet</p>
+            <p><strong>/viewad</strong> - Watch ad (+0.01 TON)</p>
+            <p><strong>/balance</strong> - Check balance</p>
+            <p><strong>/withdraw</strong> - Withdraw funds (min 2 TON)</p>
+        </div>
+        <button id="openBotBtn">Open Telegram Bot</button>
+    </div>
+
+    <!-- Подключаем библиотеки -->
+    <script src="https://unpkg.com/@tonconnect/sdk@latest/dist/tonconnect-sdk.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tonweb@latest/dist/tonweb.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@latest/build/qrcode.min.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Проверка библиотек
+            if (!window.TonConnectSDK || !window.TonWeb || !window.QRCode) {
+                alert('Required libraries not loaded. Please try again later.');
+                throw new Error('Library loading error');
+            }
+
+            // Инициализация
+            const connector = new TonConnectSDK.TonConnect({
+                manifestUrl: 'https://ozzbabym.github.io/trade/tonconnect-manifest.json'
+            });
+
+            const provider = new TonWeb.HttpProvider('https://toncenter.com/api/v2/jsonRPC', {
+                apiKey: '2eb2fcba5a966c42476ebf000212f6c78acf9d83f325f0ff7b0849406d8e07a3'
+            });
+            const tonweb = new TonWeb(provider);
+
+            // Элементы интерфейса
+            const connectBtn = document.getElementById('connectBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const walletInfo = document.getElementById('wallet-info');
+            const walletAddress = document.getElementById('walletAddress');
+            const walletNetwork = document.getElementById('walletNetwork');
+            const connectionStatus = document.getElementById('connectionStatus');
+            const openBotBtn = document.getElementById('openBotBtn');
+            const connectToBotBtn = document.getElementById('connectToBotBtn');
+            const botConnectionStatus = document.getElementById('botConnectionStatus');
+            const botUserId = document.getElementById('botUserId');
+            const botStatus = document.getElementById('botStatus');
+
+            // Генерация случайного ID пользователя для демонстрации
+            const generateUserId = () => Math.floor(100000 + Math.random() * 900000);
+            let currentUserId = generateUserId();
+            
+            // Показываем ID пользователя
+            botUserId.textContent = currentUserId;
+            botConnectionStatus.classList.remove('hidden');
+
+            // Открытие бота
+            openBotBtn.addEventListener('click', () => {
+                const botUrl = 'https://t.me/tradeusdt1bot';
+                if (window.Telegram?.WebApp?.initData) {
+                    Telegram.WebApp.openLink(botUrl);
+                } else {
+                    window.open(botUrl, '_blank', 'noopener,noreferrer');
+                }
+            });
+
+            // Подключение кошелька к веб-интерфейсу
+            connectBtn.addEventListener('click', async () => {
+                try {
+                    connectBtn.disabled = true;
+                    connectBtn.textContent = 'Connecting...';
+                    
+                    const wallets = await connector.getWallets();
+                    const tonSpace = wallets.find(w => w.name.includes("MyTonWallet") || w.name.includes("TonSpace"));
+                    
+                    if (!tonSpace) {
+                        throw new Error('TON Wallet not found. Please install TonSpace or MyTonWallet');
+                    }
+                    
+                    const connectLink = connector.connect({ 
+                        jsBridgeKey: tonSpace.jsBridgeKey,
+                        universalLink: `https://t.me/tradeusdt1bot?start=connect_${currentUserId}`
+                    });
+                    
+                    if (window.Telegram?.WebApp?.initData) {
+                        Telegram.WebApp.openLink(connectLink);
+                    } else {
+                        // Для десктопных браузеров показываем QR-код
+                        showQRCode(connectLink, 'Scan to connect wallet');
+                        window.open(connectLink, '_blank', 'noopener,noreferrer');
+                    }
+                    
+                } catch (error) {
+                    console.error('Connection error:', error);
+                    alert('Error: ' + error.message);
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = 'Connect Wallet';
+                }
+            });
+
+            // Подключение кошелька к боту
+            connectToBotBtn.addEventListener('click', async () => {
+                try {
+                    connectToBotBtn.disabled = true;
+                    connectToBotBtn.textContent = 'Connecting...';
+                    
+                    const wallets = await connector.getWallets();
+                    const tonSpace = wallets.find(w => w.name.includes("MyTonWallet") || w.name.includes("TonSpace"));
+                    
+                    if (!tonSpace) {
+                        throw new Error('TON Wallet not found');
+                    }
+                    
+                    const botConnectLink = `https://t.me/tradeusdt1bot?start=connect_${currentUserId}`;
+                    const tonConnectLink = connector.connect({
+                        jsBridgeKey: tonSpace.jsBridgeKey,
+                        universalLink: botConnectLink
+                    });
+                    
+                    if (window.Telegram?.WebApp?.initData) {
+                        Telegram.WebApp.openLink(tonConnectLink);
+                    } else {
+                        showQRCode(tonConnectLink, 'Scan to connect to bot');
+                        window.open(botConnectLink, '_blank', 'noopener,noreferrer');
+                    }
+                    
+                    // Имитация успешного подключения к боту
+                    setTimeout(() => {
+                        botStatus.textContent = 'Connected';
+                        botStatus.className = 'status connected';
+                        connectToBotBtn.textContent = 'Reconnect to Bot';
+                        connectToBotBtn.disabled = false;
+                    }, 3000);
+                    
+                } catch (error) {
+                    console.error('Bot connection error:', error);
+                    alert('Error connecting to bot: ' + error.message);
+                    connectToBotBtn.disabled = false;
+                    connectToBotBtn.textContent = 'Connect to Bot';
+                }
+            });
+
+            // Отправка транзакции
+            sendBtn.addEventListener('click', async () => {
+                try {
+                    const wallet = await connector.getWallet();
+                    if (!wallet) throw new Error('Wallet not connected');
+
+                    const amount = TonWeb.utils.toNano('0.01');
+                    const tx = {
+                        validUntil: Math.floor(Date.now() / 1000) + 300,
+                        messages: [{
+                            address: wallet.address,
+                            amount: amount.toString(),
+                            payload: 'Reward from demo app'
+                        }]
+                    };
+
+                    const result = await connector.sendTransaction(tx);
+                    console.log('Transaction sent:', result);
+                    alert('0.01 TON sent successfully!');
+                    
+                } catch (error) {
+                    console.error('Transaction error:', error);
+                    alert('Error: ' + error.message);
+                }
+            });
+
+            // Обработчик изменения статуса кошелька
+            connector.onStatusChange((wallet) => {
+                if (wallet) {
+                    walletInfo.classList.remove('hidden');
+                    walletAddress.textContent = wallet.address;
+                    walletNetwork.textContent = wallet.chain;
+                    connectionStatus.textContent = 'Connected';
+                    connectionStatus.className = 'status connected';
+                    sendBtn.disabled = false;
+                    connectBtn.textContent = 'Connected';
+                    connectBtn.disabled = true;
+                    
+                    // При подключении кошелька автоматически предлагаем подключиться к боту
+                    setTimeout(() => {
+                        alert('Wallet connected! Now you can connect it to the bot.');
+                    }, 500);
+                } else {
+                    walletInfo.classList.add('hidden');
+                    connectionStatus.textContent = 'Disconnected';
+                    connectionStatus.className = 'status disconnected';
+                    sendBtn.disabled = true;
+                    connectBtn.textContent = 'Connect Wallet';
+                    connectBtn.disabled = false;
+                }
+            });
+
+            // Проверка существующего подключения при загрузке
+            (async () => {
+                if (connector.connected) {
+                    const wallet = await connector.getWallet();
+                    if (wallet) connector.onStatusChange(wallet);
+                }
+            })();
+
+            // Функция показа QR-кода
+            function showQRCode(text, title) {
+                const existingQR = document.getElementById('qr-code-container');
+                if (existingQR) existingQR.remove();
+                
+                const container = document.createElement('div');
+                container.id = 'qr-code-container';
+                container.style.position = 'fixed';
+                container.style.top = '50%';
+                container.style.left = '50%';
+                container.style.transform = 'translate(-50%, -50%)';
+                container.style.backgroundColor = 'white';
+                container.style.padding = '20px';
+                container.style.borderRadius = '10px';
+                container.style.zIndex = '1000';
+                container.style.boxShadow = '0 0 20px rgba(0,0,0,0.3)';
+                
+                const closeBtn = document.createElement('button');
+                closeBtn.textContent = '×';
+                closeBtn.style.position = 'absolute';
+                closeBtn.style.right = '10px';
+                closeBtn.style.top = '10px';
+                closeBtn.style.background = 'none';
+                closeBtn.style.border = 'none';
+                closeBtn.style.fontSize = '20px';
+                closeBtn.style.cursor = 'pointer';
+                closeBtn.onclick = () => container.remove();
+                
+                const titleEl = document.createElement('h3');
+                titleEl.textContent = title;
+                titleEl.style.marginTop = '0';
+                titleEl.style.textAlign = 'center';
+                
+                const qrEl = document.createElement('div');
+                qrEl.className = 'qr-code';
+                
+                container.appendChild(closeBtn);
+                container.appendChild(titleEl);
+                container.appendChild(qrEl);
+                document.body.appendChild(container);
+                
+                QRCode.toCanvas(qrEl, text, { width: 200 }, (error) => {
+                    if (error) console.error('QR code error:', error);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
